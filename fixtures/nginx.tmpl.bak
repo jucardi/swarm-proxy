@@ -1,0 +1,47 @@
+worker_processes 1;
+
+events { worker_connections 1024; }
+
+http { {{ $root := . }}
+{{ range $service_key, $service := .Services }}{{ if $service.Publish }}
+	#####################################################
+	## {{ $service.Name }}
+	#####################################################
+
+	upstream service_{{ $service.Name }} {
+		{{/*}} If using the nodes hostnames with exposed port. ServicePort should match the exposed port {{*/}}
+		{{ range $node_key, $node := $root.Nodes }}server {{ $node.Description.Hostname }}:{{ $service.Config.ServicePort }};{{ end }}
+
+		{{/*}} If using Service name in overlay network. ServicePort should match the service port inside the container {{*/}}
+		server {{ $service.Name }}:{{ $service.Config.ServicePort }};
+	}
+
+	server {
+		listen {{ $service.Config.PublishPort }};
+		{{ if $service.Config.ServerName }}server_name "{{ $service.Config.ServerName }}";{{ end }}
+		{{ if $service.Config.Redirect }}
+		location = {{ $service.Config.Redirect.Source }} {
+			return 301 {{ $service.Config.Redirect.Target }};
+		}
+		{{ end }}
+		location {{ $service.Config.Proxy.Source }} {
+			proxy_pass http://service_{{ $service.Name }};
+			{{ if $service.Config.Rewrite }}rewrite {{ $service.Config.Rewrite }};{{ end }}
+			proxy_connect_timeout 1s;
+			proxy_read_timeout 1s;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header Host $host;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		}
+	}
+{{ end }}{{ end }}
+}
+
+{{/*}}
+	location /ingress/resi/listing {
+		proxy_pass http://services-resi-listing-api;
+		rewrite /ingress/resi/listing/(.*) /resi/listing/$1 break;
+		proxy_buffering off;
+		proxy_pass_request_headers      on;
+	}
+{{*/}}

@@ -1,0 +1,47 @@
+worker_processes 1;
+
+events { worker_connections 1024; }
+
+http {
+{{ range  .Upstreams }}
+	upstream {{ .Name }} {
+		server {{ .Hostname }}:{{ .Port }};
+	}
+{{ end }}
+
+{{ range .Servers }}
+	#####################################################
+	## {{ .Name }}
+	#####################################################
+
+	server {
+		listen {{ .ListenPort }};
+		{{ if .ServerName }}server_name "{{ .ServerName }}";{{ end }}
+		{{ range .Redirects }}
+		location = {{ .Source }} {
+			return 301 {{ .Target }};
+		}
+		{{ end }}
+		{{ range .Locations }}
+		location {{ .Location }} {
+			proxy_pass http://{{ .ProxyPass }};
+			{{ if .Rewrite }}rewrite {{ .Rewrite }};{{ end }}
+			proxy_connect_timeout 1s;
+			proxy_read_timeout 1s;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header Host $host;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		}
+		{{ end }}
+	}
+{{ end }}
+}
+
+{{/*}}
+	location /ingress/resi/listing {
+		proxy_pass http://services-resi-listing-api;
+		rewrite /ingress/resi/listing/(.*) /resi/listing/$1 break;
+		proxy_buffering off;
+		proxy_pass_request_headers      on;
+	}
+{{*/}}
